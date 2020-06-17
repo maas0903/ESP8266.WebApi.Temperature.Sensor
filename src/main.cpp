@@ -8,8 +8,6 @@
 #include <DallasTemperature.h>
 
 #include <WiFiUdp.h>
-#include <NTPClient.h>
-#include <TimeLib.h>
 
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
@@ -31,10 +29,6 @@ String hostName = "esp02";
 #define ONE_WIRE_BUS 2
 #define LED_0 0
 
-// Define NTP Client to get time
-WiFiUDP ntpUDP;
-const long utcOffsetInSeconds = 0;
-NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
@@ -84,22 +78,6 @@ int init_wifi()
     return WiFi.status();
 }
 
-String GetCurrentTime()
-{
-    timeClient.update();
-    unsigned long epochTime = timeClient.getEpochTime();
-    char buff[32];
-
-    sprintf(buff, "%02d-%02d-%02d %02d:%02d:%02d",
-            year(epochTime),
-            month(epochTime),
-            day(epochTime),
-            hour(epochTime),
-            minute(epochTime),
-            second(epochTime));
-    String currentTime = buff;
-    return currentTime;
-}
 
 String GetAddressToString(DeviceAddress deviceAddress)
 {
@@ -127,7 +105,6 @@ void get_temps()
 #else
         jsonObj["DEBUG"] = "false";
 #endif
-        jsonObj["UtcTime"] = GetCurrentTime();
         jsonObj["Hostname"] = hostName;
         jsonObj["IpAddress"] = WiFi.localIP().toString();
         jsonObj["MacAddress"] = WiFi.macAddress();
@@ -197,7 +174,7 @@ void config_rest_server_routing()
 {
     http_rest_server.on("/", HTTP_GET, []() {
         http_rest_server.send(200, "text/html",
-                              "Welcome to the ESP8266 REST Web Server: " + GetCurrentTime());
+                              "Welcome to the ESP8266 REST Web Server: ");
     });
     http_rest_server.on(URI, HTTP_GET, get_temps);
 }
@@ -318,8 +295,6 @@ void setup(void)
         Serial.print("Error connecting to: ");
         Serial.println(ssid);
     }
-
-    timeClient.begin();
 
     config_rest_server_routing();
 
