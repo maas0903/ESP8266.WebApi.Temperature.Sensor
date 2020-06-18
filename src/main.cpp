@@ -15,20 +15,19 @@
 #include "LittleFS.h"
 
 //#define DEBUG
-IPAddress staticIP(192, 168, 63, 56);
+IPAddress staticIP(192, 168, 63, 55);
 #define URI "/temps"
 IPAddress gateway(192, 168, 63, 1);
 IPAddress subnet(255, 255, 255, 0);
 IPAddress dns(192, 168, 63, 21);
 IPAddress dnsGoogle(8, 8, 8, 8);
-String hostName = "esp02";
+String hostName = "garage";
 
 #define HTTP_REST_PORT 80
 #define WIFI_RETRY_DELAY 500
 #define MAX_WIFI_INIT_RETRY 50
 #define ONE_WIRE_BUS 2
 #define LED_0 0
-
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
@@ -77,7 +76,6 @@ int init_wifi()
     BlinkNTimes(LED_0, 3, 500);
     return WiFi.status();
 }
-
 
 String GetAddressToString(DeviceAddress deviceAddress)
 {
@@ -173,8 +171,7 @@ void get_temps()
 void config_rest_server_routing()
 {
     http_rest_server.on("/", HTTP_GET, []() {
-        http_rest_server.send(200, "text/html",
-                              "Welcome to the ESP8266 REST Web Server: ");
+        http_rest_server.send(200, "text/html", "Welcome to the ESP8266 REST Web Server: " + hostName);
     });
     http_rest_server.on(URI, HTTP_GET, get_temps);
 }
