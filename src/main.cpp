@@ -15,19 +15,19 @@
 #include "LittleFS.h"
 
 //#define DEBUG
-IPAddress staticIP(192, 168, 63, 55);
+IPAddress staticIP(192, 168, 63, 54);
 #define URI "/temps"
 IPAddress gateway(192, 168, 63, 1);
 IPAddress subnet(255, 255, 255, 0);
 IPAddress dns(192, 168, 63, 21);
 IPAddress dnsGoogle(8, 8, 8, 8);
-String hostName = "garage";
+String hostName = "kelder";
 
 #define HTTP_REST_PORT 80
 #define WIFI_RETRY_DELAY 500
 #define MAX_WIFI_INIT_RETRY 50
-#define ONE_WIRE_BUS 2
-#define LED_0 0
+#define ONE_WIRE_BUS 0
+#define LED_0 2
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
@@ -36,7 +36,7 @@ DeviceAddress Thermometer[5];
 uint8_t sensor[5][8];
 
 String deviceAddress[5] = {"", "", "", "", ""};
-byte gpio = 2;
+//byte gpio = 0;
 String strTemperature[5] = {"-127", "-127", "-127", "-127", "-127"};
 
 int deviceCount;
@@ -106,7 +106,7 @@ void get_temps()
         jsonObj["Hostname"] = hostName;
         jsonObj["IpAddress"] = WiFi.localIP().toString();
         jsonObj["MacAddress"] = WiFi.macAddress();
-        jsonObj["Gpio"] = gpio;
+        jsonObj["Gpio"] = ONE_WIRE_BUS;
         jsonObj["DeviceType"] = "OneWire_Temp";
         jsonObj["DeviceCount"] = deviceCount;
 
@@ -250,7 +250,8 @@ void PrintDeviceInfo()
 void setup(void)
 {
     Serial.begin(115200);
-    //pinMode(LED_BUILTIN, OUTPUT);
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, LOW);
     pinMode(LED_0, OUTPUT);
 
     sensors.begin();
