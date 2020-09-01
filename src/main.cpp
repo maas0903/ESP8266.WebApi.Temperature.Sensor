@@ -15,13 +15,13 @@
 #include "LittleFS.h"
 
 //#define DEBUG
-IPAddress staticIP(192, 168, 63, 55);
+IPAddress staticIP(192, 168, 63, 58);
 #define URI "/temps"
 IPAddress gateway(192, 168, 63, 1);
 IPAddress subnet(255, 255, 255, 0);
 IPAddress dns(192, 168, 63, 21);
 IPAddress dnsGoogle(8, 8, 8, 8);
-String hostName = "garage";
+String hostName = "almaru";
 
 #define HTTP_REST_PORT 80
 #define WIFI_RETRY_DELAY 500
