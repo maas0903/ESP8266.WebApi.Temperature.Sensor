@@ -29,6 +29,15 @@ int hourOn = 8;
 int durationOn = 1;
 int override = 0;
 int overrideHour = 0;
+int summer = 0;
+int hourOff = 23;
+int degreesOff = 22;
+int degreesOn;
+int histeresis = 2; //maybe set as a property
+int degrees = -177;
+
+unsigned long time_now = 0;
+int period = 30000;
 
 #define HTTP_REST_PORT 80
 #define WIFI_RETRY_DELAY 500
@@ -38,6 +47,8 @@ int overrideHour = 0;
 #define ONE_WIRE_BUS 2
 
 bool relayOn = false;
+bool goingUp = true;
+bool switching = false;
 
 // Define NTP Client to get time
 WiFiUDP ntpUDP;
@@ -116,7 +127,7 @@ void set_defaults()
 
 boolean GetProperties()
 {
-    String url = "/MelektroApi/getbrandersettings";
+    String url = "/MelektroApi/getbrandersettings2";
     WiFiClient client;
     String response;
     if (client.connect(propertyHost, 80))
@@ -134,7 +145,7 @@ boolean GetProperties()
                 if (line.indexOf("hourOn") > 0)
                 {
                     response = line;
-                    Serial.println("line="+line);
+                    Serial.println("line=" + line);
                 }
             }
         }
@@ -149,7 +160,7 @@ boolean GetProperties()
         set_defaults();
         return false;
     }
-    
+
     StaticJsonBuffer<800> doc;
     JsonObject &root = doc.parseObject(response);
 
@@ -179,7 +190,48 @@ boolean GetProperties()
     Serial.print("override=");
     Serial.println(override);
 
+    tempPtr = root["summer"];
+    charToStringL(tempPtr, tempStr);
+    summer = tempStr.toInt();
+    Serial.print("summer=");
+    Serial.println(summer);
+
+    tempPtr = root["hourOff"];
+    charToStringL(tempPtr, tempStr);
+    hourOff = tempStr.toInt();
+    Serial.print("hourOff=");
+    Serial.println(hourOff);
+
+    tempPtr = root["degreesOff"];
+    charToStringL(tempPtr, tempStr);
+    degreesOff = tempStr.toInt();
+    Serial.print("degreesOff=");
+    Serial.println(degreesOff);
+
+    degreesOn = degreesOff - histeresis;
+
+    tempPtr = root["degrees"];
+    charToStringL(tempPtr, tempStr);
+    degrees = tempStr.toInt();
+    Serial.print("degrees=");
+    Serial.println(degrees);
+
     return true;
+}
+
+void doSwitch(bool switcher)
+{
+    if (switcher)
+    {
+        relayOn = true;
+        digitalWrite(RELAY_BUS, LOW);
+    }
+    else
+    {
+        relayOn = false;
+        digitalWrite(RELAY_BUS, HIGH);
+    }
+    goingUp = !relayOn;
 }
 
 void doSwitch()
@@ -190,42 +242,89 @@ void doSwitch()
     hourOfDay = hour(timeCurrent);
     dayOfMonth = day(timeCurrent);
 
-    if (override == 1 && !relayOn)
+    if (summer == 1)
     {
-        relayOn = true;
-        digitalWrite(RELAY_BUS, LOW);
-        overrideHour = hourOfDay+1;
-        timeClient.update();
+        if (override == 1 && !relayOn)
+        {
+            doSwitch(true);
+            overrideHour = hourOfDay + 1;
+            timeClient.update();
+        }
+
+        if ((override == 0 && digitalRead(RELAY_BUS) == LOW) ||
+            (override == 1 && relayOn && hourOfDay > overrideHour))
+        {
+            doSwitch(false);
+            override = 0;
+            overrideHour = 0;
+            timeClient.update();
+        }
+
+        if ((dayOfMonth % 2 == 0 || dayOfMonth == 31) && hourOfDay >= hourOn && hourOfDay < hourOn + durationOn && !relayOn)
+        {
+            doSwitch(true);
+            timeClient.update();
+        }
+
+        if (hourOfDay > hourOn + durationOn && digitalRead(RELAY_BUS) == LOW)
+        {
+            doSwitch(false);
+        }
+    }
+    else //winter
+    {
+        //Hysteresis
+        if ((hourOfDay > hourOn && hourOfDay < hourOff) || (override == 1))
+        {
+            //handle temperature histeresis
+            if (goingUp)
+            {
+                if (degrees >= degreesOff)
+                {
+                    goingUp = false;
+                    //statusStr = "Phase change from going up to going down";
+                }
+                else
+                {
+                    //swith warming on
+                    doSwitch(true);
+                    //statusStr = "going up - " + String(tempSensor1) + " < (Upper) " + String(maxTemp) + " Pad is ON";
+                }
+            }
+            else
+            {
+                if (degrees <= degreesOn)
+                {
+                    //statusStr = "Phase change from going down to going up";
+                    goingUp = true;
+                }
+                else
+                {
+                    //swith warming off
+                    doSwitch(false);
+                    //statusStr = "going down - " + String(tempSensor1) + " > (Lower)" + String(minTemp) + " Pad is OFF";
+                }
+            }
+        }
+        else
+        {
+            if (digitalRead(RELAY_BUS) == LOW)
+            {
+                doSwitch(false);
+            }
+        }
     }
 
-    if ((override == 0 && digitalRead(RELAY_BUS) == LOW) || 
-        (override == 1 && relayOn && hourOfDay > overrideHour))
-    {
-        relayOn = false;
-        digitalWrite(RELAY_BUS, HIGH);
-        override = 0;
-        overrideHour = 0;
-        timeClient.update();
-    }
-
-    if ((dayOfMonth % 2 == 0 || dayOfMonth == 31) && hourOfDay >= hourOn && hourOfDay < hourOn + durationOn && !relayOn)
-    {
-        relayOn = true;
-        digitalWrite(RELAY_BUS, LOW);
-        timeClient.update();
-    }
-
-    if (hourOfDay > hourOn + durationOn && digitalRead(RELAY_BUS) == LOW)
-    {
-        relayOn = false;
-        digitalWrite(RELAY_BUS, HIGH);
-    }
+    switching = false;
 }
 
 void get_status()
 {
     GetProperties();
-    doSwitch();
+    if (!switching)
+    {
+        doSwitch();
+    }
 
     BlinkNTimes(LED_BUILTIN, 2, 500);
     StaticJsonBuffer<800> jsonBuffer;
@@ -247,11 +346,24 @@ void get_status()
         jsonObj["DeviceType"] = "Relay";
         jsonObj["Status"] = relayOn;
         jsonObj["GPIOPin Status"] = digitalRead(RELAY_BUS);
+        jsonObj["summer"] = summer;
         jsonObj["hourOn"] = hourOn;
-        jsonObj["durationOn"] = durationOn;
+        if (summer == 1)
+        {
+            jsonObj["durationOn"] = durationOn;
+        }
+        else
+        {
+            jsonObj["degreesOff"] = degreesOff;
+            jsonObj["degreesOn"] = degreesOn;
+            jsonObj["histeresis"] = histeresis;
+            jsonObj["degrees"] =  degrees;
+            jsonObj["hourOff"] = hourOff;
+        }
         jsonObj["override"] = override;
         jsonObj["dayOfMonth"] = dayOfMonth;
         jsonObj["hourOfDay"] = hourOfDay;
+
     }
     catch (const std::exception &e)
     {
@@ -307,7 +419,7 @@ void setup(void)
         timeNTP = timeClient.getEpochTime();
 
         GetProperties();
-   }
+    }
     else
     {
         Serial.print("Error connecting to: ");
@@ -317,6 +429,14 @@ void setup(void)
 
 void loop(void)
 {
-    doSwitch();
+    if (millis() > time_now + period)
+    {
+        if (!switching)
+        {
+            doSwitch();
+        }
+        time_now = millis();
+    }
+
     http_rest_server.handleClient();
 }
