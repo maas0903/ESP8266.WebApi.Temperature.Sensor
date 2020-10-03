@@ -5,11 +5,11 @@
 #include <credentials.h>
 
 #include <WiFiUdp.h>
-#include <NTPClient.h>
-#include <TimeLib.h>
 
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+
+int period = 60000;
 
 //#define DEBUG
 IPAddress staticIP(192, 168, 63, 59);
@@ -18,10 +18,8 @@ IPAddress gateway(192, 168, 63, 1);
 IPAddress subnet(255, 255, 255, 0);
 IPAddress dnsGoogle(8, 8, 8, 8);
 String hostName = "brander";
-const char *propertyHost = "maiden.pagekite.me";
-
-time_t timeNow;
-time_t timeNTP;
+const char *propertyHost = "pastei05.local";
+const char *propertyHost2 = "maiden.pagekite.me";
 
 int hourOfDay;
 int dayOfMonth;
@@ -35,9 +33,11 @@ int degreesOff = 22;
 int degreesOn;
 int histeresis = 2; //maybe set as a property
 int degrees = -177;
+int absoluteMin = 10;
 
 unsigned long time_now = 0;
-int period = 30000;
+
+String statusStr = "";
 
 #define HTTP_REST_PORT 80
 #define WIFI_RETRY_DELAY 500
@@ -49,13 +49,33 @@ int period = 30000;
 bool relayOn = false;
 bool goingUp = true;
 bool switching = false;
-
-// Define NTP Client to get time
-WiFiUDP ntpUDP;
-const long utcOffsetInSeconds = 2 * 60 * 60;
-NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
+bool defaults;
 
 ESP8266WebServer http_rest_server(HTTP_REST_PORT);
+
+void SPrintLn(String message)
+{
+#ifdef DEBUG
+    Serial.println(message);
+//#else
+#endif
+}
+
+void SPrintLn(int message)
+{
+#ifdef DEBUG
+    Serial.println(message);
+//#else
+#endif
+}
+
+void SPrint(String message)
+{
+#ifdef DEBUG
+    Serial.print(message);
+//#else
+#endif
+}
 
 void charToStringL(const char S[], String &D)
 {
@@ -85,7 +105,7 @@ int init_wifi()
 {
     int retries = 0;
 
-    Serial.println("Connecting to WiFi");
+    SPrintLn("Connecting to WiFi");
 
     WiFi.config(staticIP, gateway, subnet, dnsGoogle);
     WiFi.mode(WIFI_STA);
@@ -98,52 +118,57 @@ int init_wifi()
         delay(WIFI_RETRY_DELAY);
         Serial.print("#");
     }
-    Serial.println();
+    Serial.println("connected");
     BlinkNTimes(LED_BUILTIN, 3, 500);
     return WiFi.status();
 }
 
-String GetCurrentTime(time_t epochTime)
-{
-    char buff[32];
-
-    sprintf(buff, "%02d-%02d-%02d %02d:%02d:%02d",
-            year(epochTime),
-            month(epochTime),
-            day(epochTime),
-            hour(epochTime),
-            minute(epochTime),
-            second(epochTime));
-    String currentTime = buff;
-    return currentTime;
-}
-
 void set_defaults()
 {
+    SPrintLn("Setting defaults");
+    defaults = true;
     durationOn = 1;
     hourOn = 21;
     override = 0;
+
+    summer = 1;
+    hourOff = 23;
+    degreesOff = 22;
+    absoluteMin = 10;
+    degreesOn = degreesOff - histeresis;
+    //to be sure it's off
+    degrees = 1000;
 }
 
-boolean GetProperties()
+String GetResultFromPropertHost(const char *host, uint16_t port)
 {
     String url = "/MelektroApi/getbrandersettings2";
     WiFiClient client;
-    String response;
-    if (client.connect(propertyHost, 80))
+    String response = "";
+    if (client.connect(host, 80))
     {
+        //Serial.println("connected to property server");
+        delay(200);
         client.print(String("GET " + url) + " HTTP/1.1\r\n" +
-                     "Host: " + propertyHost + "\r\n" +
+                     "Host: " + host + "\r\n" +
                      "Connection: close\r\n" +
                      "\r\n");
+        //Serial.println("printed to property server");
 
         while (client.connected() || client.available())
         {
+            delay(200);
             if (client.available())
             {
+                //Serial.println("property server available - reading line");
                 String line = client.readStringUntil('\n');
+                delay(200);
+                //Serial.println("property server available - line read");
                 if (line.indexOf("hourOn") > 0)
                 {
+                    Serial.print("Connected to host ");
+                    Serial.print(host);
+                    Serial.println(" and getting line");
                     response = line;
                     Serial.println("line=" + line);
                 }
@@ -153,70 +178,125 @@ boolean GetProperties()
     }
     else
     {
-        Serial.print("connection to ");
-        Serial.print(propertyHost);
-        Serial.println(url + " failed!");
-        client.stop();
-        set_defaults();
-        return false;
+        SPrint("not connected to ");
+        SPrintLn(host);
     }
 
-    StaticJsonBuffer<800> doc;
-    JsonObject &root = doc.parseObject(response);
+    return response;
+}
 
-    if (!root.success())
+boolean GetProperties()
+{
+    SPrintLn("Getting properties");
+    boolean result = false;
+    defaults = false;
+    String response = GetResultFromPropertHost(propertyHost, 80);
+    if (response == "")
     {
-        Serial.println("deserializeJson failed");
-        set_defaults();
+        SPrintLn("response is empty - attempting second propertyHost");
+        response = GetResultFromPropertHost(propertyHost2, 80);
+        if (response == "")
+        {
+            SPrintLn("response is empty");
+            set_defaults();
+        }
     }
 
-    const char *tempPtr;
-    tempPtr = root["hourOn"];
-    String tempStr;
-    charToStringL(tempPtr, tempStr);
-    hourOn = tempStr.toInt();
-    Serial.print("hourOn=");
-    Serial.println(hourOn);
+    if (response != "")
+    {
+        SPrintLn("attempting deserialisation of response");
+        StaticJsonBuffer<800> doc;
+        if (response.length() > 0 && response.indexOf("hourOn") > 0)
+        {
+            JsonObject &root = doc.parseObject(response);
+            SPrintLn("response parsed");
+            if (!root.success())
+            {
+                SPrintLn(" but root not successfull");
+                set_defaults();
+                SPrintLn("deserializeJson failed, result from property server not valid - set defaults");
+            }
+            else
+            {
+                SPrintLn("getting properties from result object");
+                const char *tempPtr;
+                tempPtr = root["hourOn"];
+                String tempStr;
+                charToStringL(tempPtr, tempStr);
+                hourOn = tempStr.toInt();
+                SPrint("hourOn=");
+                SPrintLn(hourOn);
 
-    tempPtr = root["durationOn"];
-    charToStringL(tempPtr, tempStr);
-    durationOn = tempStr.toInt();
-    Serial.print("durationOn=");
-    Serial.println(durationOn);
+                tempPtr = root["durationOn"];
+                charToStringL(tempPtr, tempStr);
+                durationOn = tempStr.toInt();
+                SPrint("durationOn=");
+                SPrintLn(durationOn);
 
-    tempPtr = root["override"];
-    charToStringL(tempPtr, tempStr);
-    override = tempStr.toInt();
-    Serial.print("override=");
-    Serial.println(override);
+                tempPtr = root["override"];
+                charToStringL(tempPtr, tempStr);
+                override = tempStr.toInt();
+                SPrint("override=");
+                SPrintLn(override);
 
-    tempPtr = root["summer"];
-    charToStringL(tempPtr, tempStr);
-    summer = tempStr.toInt();
-    Serial.print("summer=");
-    Serial.println(summer);
+                tempPtr = root["summer"];
+                charToStringL(tempPtr, tempStr);
+                summer = tempStr.toInt();
+                SPrint("summer=");
+                SPrintLn(summer);
 
-    tempPtr = root["hourOff"];
-    charToStringL(tempPtr, tempStr);
-    hourOff = tempStr.toInt();
-    Serial.print("hourOff=");
-    Serial.println(hourOff);
+                tempPtr = root["hourOff"];
+                charToStringL(tempPtr, tempStr);
+                hourOff = tempStr.toInt();
+                SPrint("hourOff=");
+                SPrintLn(hourOff);
 
-    tempPtr = root["degreesOff"];
-    charToStringL(tempPtr, tempStr);
-    degreesOff = tempStr.toInt();
-    Serial.print("degreesOff=");
-    Serial.println(degreesOff);
+                tempPtr = root["degreesOff"];
+                charToStringL(tempPtr, tempStr);
+                degreesOff = tempStr.toInt();
+                SPrint("degreesOff=");
+                SPrintLn(degreesOff);
 
-    degreesOn = degreesOff - histeresis;
+                tempPtr = root["absoluteMin"];
+                charToStringL(tempPtr, tempStr);
+                absoluteMin = tempStr.toInt();
+                SPrint("absoluteMin=");
+                SPrintLn(absoluteMin);
 
-    tempPtr = root["degrees"];
-    charToStringL(tempPtr, tempStr);
-    degrees = tempStr.toInt();
-    Serial.print("degrees=");
-    Serial.println(degrees);
+                degreesOn = degreesOff - histeresis;
+                SPrint("degreesOn=");
+                SPrintLn(degreesOn);
 
-    return true;
+                tempPtr = root["degrees"];
+                charToStringL(tempPtr, tempStr);
+                degrees = tempStr.toInt();
+                SPrint("degrees=");
+                SPrintLn(degrees);
+                result = true;
+
+                tempPtr = root["hourOfDay"];
+                charToStringL(tempPtr, tempStr);
+                hourOfDay = tempStr.toInt();
+                SPrint("hourOfDay=");
+                SPrintLn(hourOfDay);
+                result = true;
+
+                tempPtr = root["dayOfMonth"];
+                charToStringL(tempPtr, tempStr);
+                dayOfMonth = tempStr.toInt();
+                SPrint("dayOfMonth=");
+                SPrintLn(dayOfMonth);
+                result = true;
+            }
+        }
+        else
+        {
+            SPrintLn("result from property server not valid - set defaults");
+            set_defaults();
+        }
+    }
+
+    return result;
 }
 
 void doSwitch(bool switcher)
@@ -236,19 +316,16 @@ void doSwitch(bool switcher)
 
 void doSwitch()
 {
-    timeNow = now();
-
-    time_t timeCurrent = timeNTP + timeNow;
-    hourOfDay = hour(timeCurrent);
-    dayOfMonth = day(timeCurrent);
+    statusStr = "";
 
     if (summer == 1)
     {
+        statusStr = "summer - ";
         if (override == 1 && !relayOn)
         {
             doSwitch(true);
             overrideHour = hourOfDay + 1;
-            timeClient.update();
+            statusStr += "override is on, relay is off -> switching on ";
         }
 
         if ((override == 0 && digitalRead(RELAY_BUS) == LOW) ||
@@ -257,22 +334,30 @@ void doSwitch()
             doSwitch(false);
             override = 0;
             overrideHour = 0;
-            timeClient.update();
+            statusStr += "passed on-time -> switching off ";
         }
 
         if ((dayOfMonth % 2 == 0 || dayOfMonth == 31) && hourOfDay >= hourOn && hourOfDay < hourOn + durationOn && !relayOn)
         {
             doSwitch(true);
-            timeClient.update();
+            statusStr += "normal switching on ";
         }
 
         if (hourOfDay > hourOn + durationOn && digitalRead(RELAY_BUS) == LOW)
         {
             doSwitch(false);
+            statusStr += "normal switching off ";
         }
     }
     else //winter
     {
+        statusStr = "winter - ";
+        if (degrees <= absoluteMin)
+        {
+            statusStr += String(degrees) + " is equal or less than " + String(absoluteMin) + " - set override on ";
+            override = 1;
+        }
+
         //Hysteresis
         if ((hourOfDay > hourOn && hourOfDay < hourOff) || (override == 1))
         {
@@ -282,38 +367,51 @@ void doSwitch()
                 if (degrees >= degreesOff)
                 {
                     goingUp = false;
-                    //statusStr = "Phase change from going up to going down";
+                    statusStr += "Phase change from going up to going down - " + String(degrees) + " >= " + String(degreesOff);
                 }
                 else
                 {
-                    //swith warming on
-                    doSwitch(true);
-                    //statusStr = "going up - " + String(tempSensor1) + " < (Upper) " + String(maxTemp) + " Pad is ON";
+                    if (digitalRead(RELAY_BUS) == HIGH)
+                    {
+                        //swith warming on
+                        statusStr += "* switching on * - ";
+                        doSwitch(true);
+                    }
+                    statusStr += "going up - " + String(degrees) + " < (Upper) " + String(degreesOff) + " " + hostName + " is ON";
                 }
             }
             else
             {
                 if (degrees <= degreesOn)
                 {
-                    //statusStr = "Phase change from going down to going up";
+                    statusStr += "Phase change from going down to going up - " + String(degrees) + " <= " + String(degreesOn);
                     goingUp = true;
                 }
                 else
                 {
-                    //swith warming off
-                    doSwitch(false);
-                    //statusStr = "going down - " + String(tempSensor1) + " > (Lower)" + String(minTemp) + " Pad is OFF";
+                    if (digitalRead(RELAY_BUS) == LOW)
+                    {
+                        //swith warming off
+                        statusStr += "* switching off * - ";
+                        doSwitch(false);
+                    }
+
+                    statusStr += "going down - " + String(degrees) + " > (Lower)" + String(degreesOn) + " " + hostName + " is OFF ";
                 }
             }
         }
         else
         {
+            statusStr += "sleeping - switching off - hourOfDay (" + (String)hourOfDay + "), hourOff(" + (String)hourOff + "), hourOn(" + (String)hourOn + ")";
             if (digitalRead(RELAY_BUS) == LOW)
             {
                 doSwitch(false);
             }
         }
     }
+
+    Serial.println(statusStr);
+    Serial.println();
 
     switching = false;
 }
@@ -323,7 +421,12 @@ void get_status()
     GetProperties();
     if (!switching)
     {
+        SPrintLn("calling doSwitch");
         doSwitch();
+    }
+    else
+    {
+        SPrintLn("switching is true! ?????????????????????????");
     }
 
     BlinkNTimes(LED_BUILTIN, 2, 500);
@@ -338,7 +441,6 @@ void get_status()
 #else
         jsonObj["DEBUG"] = "false";
 #endif
-        jsonObj["UtcTime"] = GetCurrentTime(timeNTP + now());
         jsonObj["Hostname"] = hostName;
         jsonObj["IpAddress"] = WiFi.localIP().toString();
         jsonObj["MacAddress"] = WiFi.macAddress();
@@ -357,13 +459,19 @@ void get_status()
             jsonObj["degreesOff"] = degreesOff;
             jsonObj["degreesOn"] = degreesOn;
             jsonObj["histeresis"] = histeresis;
-            jsonObj["degrees"] =  degrees;
+            jsonObj["degrees"] = degrees;
             jsonObj["hourOff"] = hourOff;
+            jsonObj["absoluteMin"] = absoluteMin;
         }
         jsonObj["override"] = override;
         jsonObj["dayOfMonth"] = dayOfMonth;
         jsonObj["hourOfDay"] = hourOfDay;
+        if (defaults)
+        {
+            statusStr += "******** DEFAULT SETTINGS ********";
+        }
 
+        jsonObj["status"] = statusStr;
     }
     catch (const std::exception &e)
     {
@@ -385,7 +493,7 @@ void config_rest_server_routing()
 {
     http_rest_server.on("/", HTTP_GET, []() {
         http_rest_server.send(200, "text/html",
-                              "Welcome to the ESP8266 REST Web Server: " + GetCurrentTime(timeNTP + now()));
+                              "Welcome to the ESP8266 REST Web Server: ");
     });
     http_rest_server.on(URI, HTTP_GET, get_status);
 }
@@ -396,11 +504,6 @@ void setup(void)
     pinMode(RELAY_BUS, OUTPUT);
     digitalWrite(RELAY_BUS, HIGH);
 
-#ifdef DEBUG
-    deviceCount = 5;
-#else
-#endif
-
     set_defaults();
     relayOn = false;
     if (init_wifi() == WL_CONNECTED)
@@ -409,14 +512,11 @@ void setup(void)
         Serial.print(ssid);
         Serial.print("--- IP: ");
         Serial.println(WiFi.localIP());
-        timeClient.begin();
 
         config_rest_server_routing();
 
         http_rest_server.begin();
         Serial.println("HTTP REST Server Started");
-        timeClient.update();
-        timeNTP = timeClient.getEpochTime();
 
         GetProperties();
     }
@@ -433,7 +533,7 @@ void loop(void)
     {
         if (!switching)
         {
-            doSwitch();
+            get_status();
         }
         time_now = millis();
     }
