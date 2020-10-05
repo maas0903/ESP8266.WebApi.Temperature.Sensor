@@ -284,8 +284,10 @@ boolean GetProperties()
                 tempPtr = root["dayOfMonth"];
                 charToStringL(tempPtr, tempStr);
                 dayOfMonth = tempStr.toInt();
-                SPrint("dayOfMonth=");
-                SPrintLn(dayOfMonth);
+                // SPrint("dayOfMonth=");
+                // SPrintLn(dayOfMonth);
+                Serial.print("dayOfMonth=");
+                Serial.print(dayOfMonth);
                 result = true;
             }
         }
