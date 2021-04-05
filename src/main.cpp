@@ -1,3 +1,5 @@
+#include <ESP8266WiFi.h>
+#include "AnotherIFTTTWebhook.h"
 #include <stdio.h>
 #include <ArduinoJson.h>
 #include <Arduino.h>
@@ -7,21 +9,21 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
-#include <WiFiUdp.h>
-
-#include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 
 #include "LittleFS.h"
 
+#define IFTTT_Event "brander_toggle"
+
 //#define DEBUG
-IPAddress staticIP(192, 168, 63, 58);
+
+IPAddress staticIP(192, 168, 63, 61);
 #define URI "/temps"
 IPAddress gateway(192, 168, 63, 1);
 IPAddress subnet(255, 255, 255, 0);
-IPAddress dns(192, 168, 63, 21);
+IPAddress dns(192, 168, 63, 1);
 IPAddress dnsGoogle(8, 8, 8, 8);
-String hostName = "almaru";
+String hostName = "temp";
 
 #define HTTP_REST_PORT 80
 #define WIFI_RETRY_DELAY 500
@@ -92,9 +94,7 @@ String GetAddressToString(DeviceAddress deviceAddress)
 void get_temps()
 {
     BlinkNTimes(LED_0, 2, 500);
-    StaticJsonBuffer<800> jsonBuffer;
-    JsonObject &jsonObj = jsonBuffer.createObject();
-    char JSONmessageBuffer[800];
+    StaticJsonDocument<1024> jsonObj;
 
     try
     {
@@ -137,10 +137,10 @@ void get_temps()
             }
             Serial.println();
 
-            JsonArray &sensors = jsonObj.createNestedArray("Sensors");
+            JsonArray sensors = jsonObj.createNestedArray("Sensors");
             for (int i = 0; i < deviceCount; i++)
             {
-                JsonObject &sensor = sensors.createNestedObject();
+                JsonObject sensor = sensors.createNestedObject();
                 sensor["Id"] = deviceAddress[i];
                 sensor["ValueType"] = "Temperature";
                 sensor["Value"] = strTemperature[i];
@@ -160,12 +160,15 @@ void get_temps()
         //std::cerr << e.what() << '\n';
     }
 
-    jsonObj.prettyPrintTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+    String jSONmessageBuffer;
+    serializeJsonPretty(jsonObj, jSONmessageBuffer);
+
+    //jsonObj.prettyPrintTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
 
     http_rest_server.sendHeader("Access-Control-Allow-Origin", "*");
     http_rest_server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
 
-    http_rest_server.send(200, "application/json", JSONmessageBuffer);
+    http_rest_server.send(200, "application/json", jSONmessageBuffer);
 }
 
 void config_rest_server_routing()
@@ -217,7 +220,10 @@ void PrintDeviceInfo()
     Serial.print("    Flash frequency: ");
     Serial.print(flashFreq);
     Serial.println(" MHz");
-    Serial.printf("    Flash write mode: %s\n", (ideMode == FM_QIO ? "QIO" : ideMode == FM_QOUT ? "QOUT" : ideMode == FM_DIO ? "DIO" : ideMode == FM_DOUT ? "DOUT" : "UNKNOWN"));
+    Serial.printf("    Flash write mode: %s\n", (ideMode == FM_QIO ? "QIO" : ideMode == FM_QOUT ? "QOUT"
+                                                                         : ideMode == FM_DIO    ? "DIO"
+                                                                         : ideMode == FM_DOUT   ? "DOUT"
+                                                                                                : "UNKNOWN"));
 
     Serial.printf("__________________________\n\n");
 
@@ -228,18 +234,23 @@ void PrintDeviceInfo()
     Serial.print("    Used KB: ");
     Serial.print(fileUsedKB);
     Serial.println(" KB");
-    Serial.printf("    Block size: %lu\n", fs_info.blockSize);
-    Serial.printf("    Page size: %lu\n", fs_info.pageSize);
-    Serial.printf("    Maximum open files: %lu\n", fs_info.maxOpenFiles);
-    Serial.printf("    Maximum path length: %lu\n\n", fs_info.maxPathLength);
+    Serial.print("    Block size: ");
+    Serial.println(fs_info.blockSize);
+    Serial.print("    Page size: ");
+    Serial.println(fs_info.pageSize);
+    Serial.print("    Maximum open files: ");
+    Serial.println(fs_info.maxOpenFiles);
+    Serial.print("    Maximum path length: ");
+    Serial.println(fs_info.maxPathLength);
+    Serial.println();
 
-    Dir dir = SPIFFS.openDir("/");
-    Serial.println("SPIFFS directory {/} :");
-    while (dir.next())
-    {
-        Serial.print("  ");
-        Serial.println(dir.fileName());
-    }
+    //Dir dir = SPIFFS.openDir("/");
+    //Serial.println("SPIFFS directory {/} :");
+    //while (dir.next())
+    //{
+    //    Serial.print("  ");
+    //    Serial.println(dir.fileName());
+    //}
 
     Serial.printf("__________________________\n\n");
 
@@ -247,17 +258,10 @@ void PrintDeviceInfo()
     Serial.print("#####################");
 }
 
-void setup(void)
+void getDevices()
 {
-    Serial.begin(115200);
-    //pinMode(LED_BUILTIN, OUTPUT);
-    pinMode(LED_0, OUTPUT);
-
     sensors.begin();
-
-#ifdef DEBUG
-    deviceCount = 5;
-#else
+    delay(1000);
     deviceCount = sensors.getDeviceCount();
     Serial.print("DeviceCount=");
     Serial.println(deviceCount);
@@ -278,6 +282,18 @@ void setup(void)
     {
         BlinkNTimes(LED_0, 10, 200);
     }
+}
+
+void setup(void)
+{
+    Serial.begin(115200);
+    //pinMode(LED_BUILTIN, OUTPUT);
+    pinMode(LED_0, OUTPUT);
+
+#ifdef DEBUG
+    deviceCount = 5;
+#else
+  getDevices();
 #endif
 
     if (init_wifi() == WL_CONNECTED)
@@ -286,6 +302,10 @@ void setup(void)
         Serial.print(ssid);
         Serial.print("--- IP: ");
         Serial.println(WiFi.localIP());
+        String str = "ESP8266 Webserver started on "+hostName;
+        char *cstr = &str[0];
+        send_webhook(IFTTT_Event, IFTTT_Key, cstr, "", "");
+        Serial.println("Webhook sent");
     }
     else
     {
@@ -298,10 +318,15 @@ void setup(void)
     http_rest_server.begin();
     Serial.println("HTTP REST Server Started");
 
-    PrintDeviceInfo();
+    //PrintDeviceInfo();
 }
 
 void loop(void)
 {
+    if (deviceCount == 0)
+    {
+        getDevices();
+        delay(5000);
+    }
     http_rest_server.handleClient();
 }
