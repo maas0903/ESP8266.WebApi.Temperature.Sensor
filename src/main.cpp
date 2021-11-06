@@ -1,5 +1,5 @@
 #include <ESP8266WiFi.h>
-#include "AnotherIFTTTWebhook.h"
+//#include "AnotherIFTTTWebhook.h"
 #include <stdio.h>
 #include <ArduinoJson.h>
 #include <Arduino.h>
@@ -13,17 +13,17 @@
 
 #include "LittleFS.h"
 
-#define IFTTT_Event "brander_toggle"
+//#define IFTTT_Event "brander_toggle"
 
 //#define DEBUG
 
-IPAddress staticIP(192, 168, 63, 61);
+IPAddress staticIP(192, 168, 63, 63);
 #define URI "/temps"
 IPAddress gateway(192, 168, 63, 1);
 IPAddress subnet(255, 255, 255, 0);
 IPAddress dns(192, 168, 63, 1);
 IPAddress dnsGoogle(8, 8, 8, 8);
-String hostName = "temp";
+String hostName = "buite2";
 
 #define HTTP_REST_PORT 80
 #define WIFI_RETRY_DELAY 500
@@ -303,9 +303,9 @@ void setup(void)
         Serial.print("--- IP: ");
         Serial.println(WiFi.localIP());
         String str = "ESP8266 Webserver started on "+hostName;
-        char *cstr = &str[0];
-        send_webhook(IFTTT_Event, IFTTT_Key, cstr, "", "");
-        Serial.println("Webhook sent");
+        //char *cstr = &str[0];
+        //send_webhook(IFTTT_Event, IFTTT_Key, cstr, "", "");
+        //Serial.println("Webhook sent");
     }
     else
     {
