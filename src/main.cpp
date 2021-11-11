@@ -5,6 +5,7 @@
 #include <Arduino.h>
 
 #include <credentials.h>
+#include <OTA.h>
 
 #include <OneWire.h>
 #include <DallasTemperature.h>
@@ -17,13 +18,7 @@
 
 //#define DEBUG
 
-IPAddress staticIP(192, 168, 63, 63);
 #define URI "/temps"
-IPAddress gateway(192, 168, 63, 1);
-IPAddress subnet(255, 255, 255, 0);
-IPAddress dns(192, 168, 63, 1);
-IPAddress dnsGoogle(8, 8, 8, 8);
-String hostName = "buite2";
 
 #define HTTP_REST_PORT 80
 #define WIFI_RETRY_DELAY 500
@@ -296,6 +291,7 @@ void setup(void)
   getDevices();
 #endif
 
+    /*
     if (init_wifi() == WL_CONNECTED)
     {
         Serial.print("Connected to ");
@@ -312,6 +308,9 @@ void setup(void)
         Serial.print("Error connecting to: ");
         Serial.println(ssid);
     }
+    */
+
+    setupOTA("TemplateSketch", ssid, password);
 
     config_rest_server_routing();
 
@@ -323,6 +322,7 @@ void setup(void)
 
 void loop(void)
 {
+    ArduinoOTA.handle();
     if (deviceCount == 0)
     {
         getDevices();
