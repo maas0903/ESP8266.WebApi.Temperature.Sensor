@@ -4,5 +4,7 @@
 .vscode/launch.json
 .vscode/ipch
 .vs
+.clj-kondo
+.lsp
 ### Credentials ###
 include/credentials.h
