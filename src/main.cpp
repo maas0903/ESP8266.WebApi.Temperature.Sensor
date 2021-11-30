@@ -110,14 +110,13 @@ void get_temps()
         {
             Serial.println("No Content");
             //http_rest_server.send(204);
-            //Serial.println("send(204)");
             //CORS
-            //http_rest_server.sendHeader("Access-Control-Allow-Origin", "*");
-            //Serial.println("sendHeader(´Access-Control-Allow-Origin´, ´*´);");
+            http_rest_server.sendHeader("Access-Control-Allow-Origin", "*");
+            Serial.println("sendHeader(´Access-Control-Allow-Origin´, ´*´);");
             String sHostName = /*WiFi.hostname()*/"wroom";
 
-            //http_rest_server.send(200, "text/html", "No devices found on " + sHostName + " (" + WiFi.macAddress() + ")");
-            http_rest_server.send(200, "text/html", "No devices found");
+            http_rest_server.send(200, "text/html", "No devices found on " + sHostName + " (" + WiFi.macAddress() + ")");
+            //http_rest_server.send(200, "text/html", "No devices found");
             Serial.println("send(200, ...");
         }
         else
