@@ -1,7 +1,6 @@
-//#include <ESP8266WiFi.h>
 #include <WiFi.h>
-#include <WiFiClient.h>   // for accessing NTP real time API data
-//#include "AnotherIFTTTWebhook.h"
+#include <WebServer.h>
+
 #include <stdio.h>
 #include <ArduinoJson.h>
 #include <Arduino.h>
@@ -20,7 +19,7 @@
 
 //#define DEBUG
 
-//#define URI "/temps"
+#define URI "/temps"
 
 #define HTTP_REST_PORT 80
 #define WIFI_RETRY_DELAY 500
@@ -40,7 +39,7 @@ String strTemperature[5] = {"-127", "-127", "-127", "-127", "-127"};
 
 int deviceCount;
 
-//ESP8266WebServer http_rest_server(HTTP_REST_PORT);
+WebServer http_rest_server(HTTP_REST_PORT);
 
 void BlinkNTimes(int pin, int blinks, unsigned long millies)
 {
@@ -109,13 +108,17 @@ void get_temps()
 
         if (deviceCount == 0)
         {
-            Serial.print("No Content");
+            Serial.println("No Content");
             //http_rest_server.send(204);
+            //Serial.println("send(204)");
             //CORS
             //http_rest_server.sendHeader("Access-Control-Allow-Origin", "*");
-            String sHostName(/*WiFi.hostname()*/"wroom");
+            //Serial.println("sendHeader(´Access-Control-Allow-Origin´, ´*´);");
+            String sHostName = /*WiFi.hostname()*/"wroom";
 
             //http_rest_server.send(200, "text/html", "No devices found on " + sHostName + " (" + WiFi.macAddress() + ")");
+            http_rest_server.send(200, "text/html", "No devices found");
+            Serial.println("send(200, ...");
         }
         else
         {
@@ -162,13 +165,12 @@ void get_temps()
 
     //jsonObj.prettyPrintTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
 
-    //http_rest_server.sendHeader("Access-Control-Allow-Origin", "*");
-    //http_rest_server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+    http_rest_server.sendHeader("Access-Control-Allow-Origin", "*");
+    http_rest_server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
 
-    //http_rest_server.send(200, "application/json", jSONmessageBuffer);
+    http_rest_server.send(200, "application/json", jSONmessageBuffer);
 }
 
-/*
 void config_rest_server_routing()
 {
     http_rest_server.on("/", HTTP_GET, []() {
@@ -176,8 +178,6 @@ void config_rest_server_routing()
     });
     http_rest_server.on(URI, HTTP_GET, get_temps);
 }
-*/
-
 
 /*
 void PrintDeviceInfo()
@@ -318,9 +318,9 @@ void setup(void)
 
     setupOTA("TemplateSketch", ssid, password);
 
-    //config_rest_server_routing();
+    config_rest_server_routing();
 
-    //http_rest_server.begin();
+    http_rest_server.begin();
     Serial.println("HTTP REST Server Started");
 
     //PrintDeviceInfo();
@@ -334,5 +334,5 @@ void loop(void)
         getDevices();
         delay(5000);
     }
-    //http_rest_server.handleClient();
+    http_rest_server.handleClient();
 }
