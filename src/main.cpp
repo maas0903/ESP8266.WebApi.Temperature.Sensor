@@ -11,7 +11,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
-//#include <ESP8266WebServer.h>
+#include <driver/dac.h>
 
 //#include "LittleFS.h"
 
@@ -24,8 +24,8 @@
 #define HTTP_REST_PORT 80
 #define WIFI_RETRY_DELAY 500
 #define MAX_WIFI_INIT_RETRY 50
-#define ONE_WIRE_BUS 2
-#define LED_0 0
+#define ONE_WIRE_BUS 4
+#define LED_0 2
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
@@ -109,14 +109,14 @@ void get_temps()
         if (deviceCount == 0)
         {
             Serial.println("No Content");
-            //http_rest_server.send(204);
-            //CORS
+            // http_rest_server.send(204);
+            // CORS
             http_rest_server.sendHeader("Access-Control-Allow-Origin", "*");
             Serial.println("sendHeader(´Access-Control-Allow-Origin´, ´*´);");
-            String sHostName = /*WiFi.hostname()*/"wroom";
+            String sHostName = /*WiFi.hostname()*/ "wroom";
 
             http_rest_server.send(200, "text/html", "No devices found on " + sHostName + " (" + WiFi.macAddress() + ")");
-            //http_rest_server.send(200, "text/html", "No devices found");
+            // http_rest_server.send(200, "text/html", "No devices found");
             Serial.println("send(200, ...");
         }
         else
@@ -156,13 +156,13 @@ void get_temps()
         // String exception = e.what();
         // jsonObj["Exception"] = exception.substring(0, 99);
         jsonObj["Exception"] = " ";
-        //std::cerr << e.what() << '\n';
+        // std::cerr << e.what() << '\n';
     }
 
     String jSONmessageBuffer;
     serializeJsonPretty(jsonObj, jSONmessageBuffer);
 
-    //jsonObj.prettyPrintTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+    // jsonObj.prettyPrintTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
 
     http_rest_server.sendHeader("Access-Control-Allow-Origin", "*");
     http_rest_server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
@@ -172,9 +172,8 @@ void get_temps()
 
 void config_rest_server_routing()
 {
-    http_rest_server.on("/", HTTP_GET, []() {
-        http_rest_server.send(200, "text/html", "Welcome to the ESP8266 REST Web Server: " + hostName);
-    });
+    http_rest_server.on("/", HTTP_GET, []()
+                        { http_rest_server.send(200, "text/html", "Welcome to the ESP8266 REST Web Server: " + hostName); });
     http_rest_server.on(URI, HTTP_GET, get_temps);
 }
 
@@ -287,13 +286,13 @@ void getDevices()
 void setup(void)
 {
     Serial.begin(115200);
-    //pinMode(LED_BUILTIN, OUTPUT);
+    // pinMode(LED_BUILTIN, OUTPUT);
     pinMode(LED_0, OUTPUT);
 
 #ifdef DEBUG
     deviceCount = 5;
 #else
-  getDevices();
+    getDevices();
 #endif
 
     /*
@@ -322,7 +321,10 @@ void setup(void)
     http_rest_server.begin();
     Serial.println("HTTP REST Server Started");
 
-    //PrintDeviceInfo();
+    dac_output_enable(DAC_CHANNEL_1);
+    dac_output_voltage(DAC_CHANNEL_1, 200);
+
+    // PrintDeviceInfo();
 }
 
 void loop(void)
@@ -334,4 +336,13 @@ void loop(void)
         delay(5000);
     }
     http_rest_server.handleClient();
+    
+    int touchValue = touchRead(15);
+    delay(1000);
+    if (touchValue < 20)
+    {
+        Serial.print("touched - value = ");
+        Serial.println(touchValue);
+        BlinkNTimes(LED_0, 3, 500);
+    }
 }
