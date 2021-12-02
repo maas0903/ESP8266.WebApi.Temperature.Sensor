@@ -292,7 +292,7 @@ void setup(void)
 #ifdef DEBUG
     deviceCount = 5;
 #else
-    getDevices();
+    //getDevices();
 #endif
 
     /*
@@ -324,6 +324,8 @@ void setup(void)
     dac_output_enable(DAC_CHANNEL_1);
     dac_output_voltage(DAC_CHANNEL_1, 200);
 
+    touch_pad_init();
+
     // PrintDeviceInfo();
 }
 
@@ -336,13 +338,26 @@ void loop(void)
         delay(5000);
     }
     http_rest_server.handleClient();
+
+    int touchValue = 0;
     
-    int touchValue = touchRead(15);
-    delay(1000);
-    if (touchValue < 20)
+    for (int i = 0; i < 100; i++)
+    {
+        touchValue += touchRead(15);
+    }
+    
+    touchValue = touchValue / 100;
+    
+    //Serial.println(touchValue);
+    
+    if (touchValue < 10)
     {
         Serial.print("touched - value = ");
         Serial.println(touchValue);
-        BlinkNTimes(LED_0, 3, 500);
+        BlinkNTimes(LED_0, 1, 1000);
+    }
+    else
+    {
+        delay(500);
     }
 }
