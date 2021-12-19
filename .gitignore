@@ -3,5 +3,8 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+.clj-kondo
+.lsp
+.vs
 ### Credentials ###
 include/credentials.h
