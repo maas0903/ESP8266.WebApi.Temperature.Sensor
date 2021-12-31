@@ -17,13 +17,7 @@
 
 //#define DEBUG
 
-IPAddress staticIP(192, 168, 63, 63);
 #define URI "/temps"
-IPAddress gateway(192, 168, 63, 1);
-IPAddress subnet(255, 255, 255, 0);
-IPAddress dns(192, 168, 63, 1);
-IPAddress dnsGoogle(8, 8, 8, 8);
-String hostName = "buite2";
 
 #define HTTP_REST_PORT 80
 #define WIFI_RETRY_DELAY 500
