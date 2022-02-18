@@ -178,10 +178,6 @@ void setup(void)
         Serial.print(ssid);
         Serial.print("--- IP: ");
         Serial.println(WiFi.localIP());
-        String str = "ESP8266 Webserver started on " + hostName;
-        // char *cstr = &str[0];
-        // send_webhook(IFTTT_Event, IFTTT_Key, cstr, "", "");
-        // Serial.println("Webhook sent");
     }
     else
     {
