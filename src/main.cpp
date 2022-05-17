@@ -119,6 +119,8 @@ void get_temps()
                 Point sensor(hostName + String(i));
                 sensor.clearFields();
                 sensor.addField("temperature", tempSensor[i]);
+                sensor.addField("ipaddress", WiFi.localIP().toString());
+                sensor.addField("mac-address", WiFi.macAddress());
                 Serial.println(client.pointToLineProtocol(sensor));
 
                 if (!client.writePoint(sensor))
@@ -190,13 +192,14 @@ void loop(void)
 {
     if (deviceCount == 0)
     {
+        Serial.print("Devices(s) not found - getting devices");
         getDevices();
         delay(5000);
     }
     else
     {
         unsigned long currentMillis = millis();
-        if (currentMillis - previousMillisWiFi >= 180 * 1000) // send data every 15 sec
+        if (currentMillis - previousMillisWiFi >= 15 * 1000)
         {
             get_temps();
             previousMillisWiFi = currentMillis;
