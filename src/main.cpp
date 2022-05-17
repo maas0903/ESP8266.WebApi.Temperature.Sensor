@@ -3,15 +3,11 @@
 #include <stdio.h>
 #include <ArduinoJson.h>
 #include <Arduino.h>
-
 #include <credentials.h>
-
 #include <OneWire.h>
 #include <DallasTemperature.h>
-
 #include <ESP8266WebServer.h>
-
-#include "LittleFS.h"
+#include <InfluxDbClient.h>
 
 //#define IFTTT_Event "brander_toggle"
 
@@ -25,11 +21,20 @@
 #define ONE_WIRE_BUS 2
 #define LED_0 0
 
+#define INFLUXDB_URL "http://192.168.63.28:8086"
+#define INFLUXDB_TOKEN "tokedid"
+#define INFLUXDB_ORG "org"
+#define INFLUXDB_BUCKET "sensors"
+
+InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN);
+
+unsigned long previousMillisWiFi = 0;
+
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 float tempSensor[5];
 DeviceAddress Thermometer[5];
-uint8_t sensor[5][8];
+uint8_t jsonSensor[5][8];
 
 String deviceAddress[5] = {"", "", "", "", ""};
 byte gpio = 2;
@@ -107,8 +112,8 @@ void get_temps()
         if (deviceCount == 0)
         {
             Serial.print("No Content");
-            //http_rest_server.send(204);
-            //CORS
+            // http_rest_server.send(204);
+            // CORS
             http_rest_server.sendHeader("Access-Control-Allow-Origin", "*");
             String sHostName(WiFi.hostname());
 
@@ -123,10 +128,10 @@ void get_temps()
                 tempSensor[i] = 27 + i;
                 deviceAddress[i] = (String)(100 + i);
 #else
-                tempSensor[i] = sensors.getTempC(sensor[i]);
+                tempSensor[i] = sensors.getTempC(jsonSensor[i]);
                 deviceAddress[i] = GetAddressToString(Thermometer[i]);
 #endif
-                strTemperature[i] = tempSensor[i];
+                strTemperature[i] = (String)tempSensor[i];
                 Serial.print(strTemperature[i] + " ");
             }
             Serial.println();
@@ -134,15 +139,28 @@ void get_temps()
             JsonArray sensors = jsonObj.createNestedArray("Sensors");
             for (int i = 0; i < deviceCount; i++)
             {
-                JsonObject sensor = sensors.createNestedObject();
-                sensor["Id"] = deviceAddress[i];
-                sensor["ValueType"] = "Temperature";
-                sensor["Value"] = strTemperature[i];
+                JsonObject jsonSensor = sensors.createNestedObject();
+                jsonSensor["Id"] = deviceAddress[i];
+                jsonSensor["ValueType"] = "Temperature";
+                jsonSensor["Value"] = strTemperature[i];
 
                 Serial.print("DeviceId=");
                 Serial.println(deviceAddress[i]);
                 Serial.print("Temp=");
                 Serial.println(strTemperature[i]);
+
+                Point influxDbSensor(hostName + String(i));
+                influxDbSensor.clearFields();
+                influxDbSensor.addField("temperature", tempSensor[i]);
+                influxDbSensor.addField("ipaddress", WiFi.localIP().toString());
+                influxDbSensor.addField("mac-address", WiFi.macAddress());
+                Serial.println(client.pointToLineProtocol(influxDbSensor));
+
+                if (!client.writePoint(influxDbSensor))
+                {
+                    Serial.print("InfluxDB write failed: ");
+                    Serial.println(client.getLastErrorMessage());
+                }
             }
         }
     }
@@ -151,13 +169,13 @@ void get_temps()
         // String exception = e.what();
         // jsonObj["Exception"] = exception.substring(0, 99);
         jsonObj["Exception"] = " ";
-        //std::cerr << e.what() << '\n';
+        // std::cerr << e.what() << '\n';
     }
 
     String jSONmessageBuffer;
     serializeJsonPretty(jsonObj, jSONmessageBuffer);
 
-    //jsonObj.prettyPrintTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
+    // jsonObj.prettyPrintTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
 
     http_rest_server.sendHeader("Access-Control-Allow-Origin", "*");
     http_rest_server.sendHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
@@ -167,89 +185,9 @@ void get_temps()
 
 void config_rest_server_routing()
 {
-    http_rest_server.on("/", HTTP_GET, []() {
-        http_rest_server.send(200, "text/html", "Welcome to the ESP8266 REST Web Server: " + hostName);
-    });
+    http_rest_server.on("/", HTTP_GET, []()
+                        { http_rest_server.send(200, "text/html", "Welcome to the ESP8266 REST Web Server: " + hostName); });
     http_rest_server.on(URI, HTTP_GET, get_temps);
-}
-
-void PrintDeviceInfo()
-{
-    LittleFS.begin();
-    FSInfo fs_info;
-    LittleFS.info(fs_info);
-
-    float fileTotalKB = (float)fs_info.totalBytes / 1024.0;
-    float fileUsedKB = (float)fs_info.usedBytes / 1024.0;
-
-    float flashChipSize = (float)ESP.getFlashChipSize() / 1024.0 / 1024.0;
-    float realFlashChipSize = (float)ESP.getFlashChipRealSize() / 1024.0 / 1024.0;
-    float flashFreq = (float)ESP.getFlashChipSpeed() / 1000.0 / 1000.0;
-    FlashMode_t ideMode = ESP.getFlashChipMode();
-
-    Serial.printf("\n#####################\n");
-
-    Serial.printf("__________________________\n\n");
-    Serial.println("Firmware: ");
-    Serial.printf("    Chip Id: %08X\n", ESP.getChipId());
-    Serial.print("    Core version: ");
-    Serial.println(ESP.getCoreVersion());
-    Serial.print("    SDK version: ");
-    Serial.println(ESP.getSdkVersion());
-    Serial.print("    Boot version: ");
-    Serial.println(ESP.getBootVersion());
-    Serial.print("    Boot mode: ");
-    Serial.println(ESP.getBootMode());
-
-    Serial.printf("__________________________\n\n");
-
-    Serial.println("Flash chip information: ");
-    Serial.printf("    Flash chip Id: %08X (for example: Id=001640E0  Manuf=E0, Device=4016 (swap bytes))\n", ESP.getFlashChipId());
-    Serial.printf("    Sketch thinks Flash RAM is size: ");
-    Serial.print(flashChipSize);
-    Serial.println(" MB");
-    Serial.print("    Actual size based on chip Id: ");
-    Serial.print(realFlashChipSize);
-    Serial.println(" MB ... given by (2^( \"Device\" - 1) / 8 / 1024");
-    Serial.print("    Flash frequency: ");
-    Serial.print(flashFreq);
-    Serial.println(" MHz");
-    Serial.printf("    Flash write mode: %s\n", (ideMode == FM_QIO ? "QIO" : ideMode == FM_QOUT ? "QOUT"
-                                                                         : ideMode == FM_DIO    ? "DIO"
-                                                                         : ideMode == FM_DOUT   ? "DOUT"
-                                                                                                : "UNKNOWN"));
-
-    Serial.printf("__________________________\n\n");
-
-    Serial.println("File system (SPIFFS): ");
-    Serial.print("    Total KB: ");
-    Serial.print(fileTotalKB);
-    Serial.println(" KB");
-    Serial.print("    Used KB: ");
-    Serial.print(fileUsedKB);
-    Serial.println(" KB");
-    Serial.print("    Block size: ");
-    Serial.println(fs_info.blockSize);
-    Serial.print("    Page size: ");
-    Serial.println(fs_info.pageSize);
-    Serial.print("    Maximum open files: ");
-    Serial.println(fs_info.maxOpenFiles);
-    Serial.print("    Maximum path length: ");
-    Serial.println(fs_info.maxPathLength);
-    Serial.println();
-
-    //Dir dir = SPIFFS.openDir("/");
-    //Serial.println("SPIFFS directory {/} :");
-    //while (dir.next())
-    //{
-    //    Serial.print("  ");
-    //    Serial.println(dir.fileName());
-    //}
-
-    Serial.printf("__________________________\n\n");
-
-    Serial.printf("CPU frequency: %u MHz\n\n", ESP.getCpuFreqMHz());
-    Serial.print("#####################");
 }
 
 void getDevices()
@@ -267,7 +205,7 @@ void getDevices()
             {
                 for (uint8_t i = 0; i < 8; i++)
                 {
-                    sensor[j][i] = Thermometer[j][i];
+                    jsonSensor[j][i] = Thermometer[j][i];
                 }
             }
         }
@@ -281,13 +219,13 @@ void getDevices()
 void setup(void)
 {
     Serial.begin(115200);
-    //pinMode(LED_BUILTIN, OUTPUT);
+    // pinMode(LED_BUILTIN, OUTPUT);
     pinMode(LED_0, OUTPUT);
 
 #ifdef DEBUG
     deviceCount = 5;
 #else
-  getDevices();
+    getDevices();
 #endif
 
     if (init_wifi() == WL_CONNECTED)
@@ -296,10 +234,10 @@ void setup(void)
         Serial.print(ssid);
         Serial.print("--- IP: ");
         Serial.println(WiFi.localIP());
-        String str = "ESP8266 Webserver started on "+hostName;
-        //char *cstr = &str[0];
-        //send_webhook(IFTTT_Event, IFTTT_Key, cstr, "", "");
-        //Serial.println("Webhook sent");
+        String str = "ESP8266 Webserver started on " + hostName;
+        // char *cstr = &str[0];
+        // send_webhook(IFTTT_Event, IFTTT_Key, cstr, "", "");
+        // Serial.println("Webhook sent");
     }
     else
     {
@@ -312,7 +250,7 @@ void setup(void)
     http_rest_server.begin();
     Serial.println("HTTP REST Server Started");
 
-    //PrintDeviceInfo();
+    // PrintDeviceInfo();
 }
 
 void loop(void)
