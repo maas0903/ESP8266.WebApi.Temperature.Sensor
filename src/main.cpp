@@ -92,7 +92,7 @@ String GetAddressToString(DeviceAddress deviceAddress)
 
 void get_temps()
 {
-    BlinkNTimes(LED_0, 2, 500);
+    // BlinkNTimes(LED_0, 2, 500);
     StaticJsonDocument<1024> jsonObj;
 
     try
@@ -259,6 +259,17 @@ void loop(void)
     {
         getDevices();
         delay(5000);
+    }
+    else
+    {
+        unsigned long currentMillis = millis();
+        if (currentMillis - previousMillisWiFi >= 15 * 1000)
+        {
+            get_temps();
+            previousMillisWiFi = currentMillis;
+            Serial.print(F("Wifi is still connected with IP: "));
+            Serial.println(WiFi.localIP()); // inform user about his IP address
+        }
     }
     http_rest_server.handleClient();
 }
