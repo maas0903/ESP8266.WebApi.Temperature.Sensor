@@ -22,11 +22,10 @@
 #define LED_0 0
 
 #define INFLUXDB_URL "http://192.168.63.28:8086"
-#define INFLUXDB_TOKEN "tokedid"
-#define INFLUXDB_ORG "org"
-#define INFLUXDB_BUCKET "sensors"
+#define INFLUXDB_ORG "huis"
+#define INFLUXDB_BUCKET "huis"
 
-InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN);
+InfluxDBClient influxDbClient(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN);
 
 unsigned long previousMillisWiFi = 0;
 
@@ -44,7 +43,7 @@ int deviceCount;
 
 ESP8266WebServer http_rest_server(HTTP_REST_PORT);
 
-void BlinkNTimes(int pin, int blinks, unsigned long millies)
+void BlinkNTimes(int pin, int blinks, unsigned long millies, String fromStr)
 {
     digitalWrite(pin, LOW);
     for (int i = 0; i < blinks; i++)
@@ -54,6 +53,7 @@ void BlinkNTimes(int pin, int blinks, unsigned long millies)
         digitalWrite(pin, LOW);
         delay(millies);
     }
+    Serial.println("BlinkNTimes from " + fromStr);
 }
 
 int init_wifi()
@@ -74,7 +74,7 @@ int init_wifi()
         Serial.print("#");
     }
     Serial.println();
-    BlinkNTimes(LED_0, 3, 500);
+    BlinkNTimes(LED_0, 3, 500, "init_wifi");
     return WiFi.status();
 }
 
@@ -151,15 +151,15 @@ void get_temps()
 
                 Point influxDbSensor(hostName + String(i));
                 influxDbSensor.clearFields();
-                influxDbSensor.addField("temperature", tempSensor[i]);
                 influxDbSensor.addField("ipaddress", WiFi.localIP().toString());
                 influxDbSensor.addField("mac-address", WiFi.macAddress());
-                Serial.println(client.pointToLineProtocol(influxDbSensor));
+                influxDbSensor.addField("temperature", tempSensor[i]);
+                Serial.println(influxDbClient.pointToLineProtocol(influxDbSensor));
 
-                if (!client.writePoint(influxDbSensor))
+                if (!influxDbClient.writePoint(influxDbSensor))
                 {
                     Serial.print("InfluxDB write failed: ");
-                    Serial.println(client.getLastErrorMessage());
+                    Serial.println(influxDbClient.getLastErrorMessage());
                 }
             }
         }
@@ -212,7 +212,7 @@ void getDevices()
     }
     catch (const std::exception &e)
     {
-        BlinkNTimes(LED_0, 10, 200);
+        BlinkNTimes(LED_0, 10, 200, "getDevices - exception");
     }
 }
 
@@ -244,6 +244,8 @@ void setup(void)
         Serial.print("Error connecting to: ");
         Serial.println(ssid);
     }
+
+    digitalWrite(LED_0, HIGH);
 
     config_rest_server_routing();
 
