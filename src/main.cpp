@@ -1,5 +1,5 @@
 #include <ESP8266WiFi.h>
-//#include "AnotherIFTTTWebhook.h"
+// #include "AnotherIFTTTWebhook.h"
 #include <stdio.h>
 #include <ArduinoJson.h>
 #include <Arduino.h>
@@ -9,9 +9,9 @@
 #include <ESP8266WebServer.h>
 #include <InfluxDbClient.h>
 
-//#define IFTTT_Event "brander_toggle"
+// #define IFTTT_Event "brander_toggle"
 
-//#define DEBUG
+// #define DEBUG
 
 #define URI "/temps"
 
