@@ -4,24 +4,15 @@
 #include <credentials.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include <InfluxDbClient.h>
+#include <InfluxDBData.h>
 
-//#define DEBUG
+// #define DEBUG
 
-#define URI "/temps"
-
-#define HTTP_REST_PORT 80
 #define WIFI_RETRY_DELAY 500
 #define MAX_WIFI_INIT_RETRY 50
 #define ONE_WIRE_BUS 2
 #define LED_0 0
 
-#define INFLUXDB_URL "http://192.168.63.28:8086"
-#define INFLUXDB_TOKEN "tokedid"
-#define INFLUXDB_ORG "org"
-#define INFLUXDB_BUCKET "sensors"
-
-InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN);
 unsigned long previousMillisWiFi = 0;
 
 OneWire oneWire(ONE_WIRE_BUS);
@@ -48,16 +39,14 @@ void BlinkNTimes(int pin, int blinks, unsigned long millies)
     }
 }
 
-int init_wifi()
+void init_wifi()
 {
     int retries = 0;
 
     Serial.println("Connecting to WiFi");
 
-    WiFi.config(staticIP, gateway, subnet, dns, dnsGoogle);
-    WiFi.mode(WIFI_STA);
-    WiFi.hostname(hostName);
     WiFi.begin(ssid, password);
+    WiFi.setHostname(hostName.c_str());
 
     while ((WiFi.status() != WL_CONNECTED) && (retries < MAX_WIFI_INIT_RETRY))
     {
@@ -66,8 +55,20 @@ int init_wifi()
         Serial.print("#");
     }
     Serial.println();
-    BlinkNTimes(LED_0, 3, 500);
-    return WiFi.status();
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        Serial.print("Connected to ");
+        Serial.print(ssid);
+        Serial.print("--- IP: ");
+        Serial.println(WiFi.localIP());
+        // BlinkNTimes(LED_0, 3, 500);
+    }
+    else
+    {
+        Serial.print("Error connecting to: ");
+        Serial.println(ssid);
+    }
 }
 
 String GetAddressToString(DeviceAddress deviceAddress)
@@ -116,18 +117,17 @@ void get_temps()
             for (int i = 0; i < deviceCount; i++)
             {
                 Serial.println(hostName + String(i) + " = " + String(tempSensor[i]));
-                Point sensor(hostName + String(i));
-                sensor.clearFields();
-                sensor.addField("temperature", tempSensor[i]);
-                sensor.addField("ipaddress", WiFi.localIP().toString());
-                sensor.addField("mac-address", WiFi.macAddress());
-                Serial.println(client.pointToLineProtocol(sensor));
 
-                if (!client.writePoint(sensor))
-                {
-                    Serial.print("InfluxDB write failed: ");
-                    Serial.println(client.getLastErrorMessage());
-                }
+                InfluxDBData influxDBData("192.168.63.28:8086",
+                                          INFLUXDB_TOKEN,
+                                          "huis",
+                                          "huis",
+                                          WiFi.hostname(),
+                                          "0",
+                                          "temperature",
+                                          (String)tempSensor[i]);
+                int returnCode = influxDBData.PutData();
+                Serial.println("ReturnCode=" + String(returnCode));
             }
         }
     }
@@ -174,18 +174,7 @@ void setup(void)
     getDevices();
 #endif
 
-    if (init_wifi() == WL_CONNECTED)
-    {
-        Serial.print("Connected to ");
-        Serial.print(ssid);
-        Serial.print("--- IP: ");
-        Serial.println(WiFi.localIP());
-    }
-    else
-    {
-        Serial.print("Error connecting to: ");
-        Serial.println(ssid);
-    }
+    init_wifi();
 }
 
 void loop(void)
