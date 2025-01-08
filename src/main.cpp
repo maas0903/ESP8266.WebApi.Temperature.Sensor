@@ -15,6 +15,12 @@
 
 unsigned long previousMillisWiFi = 0;
 
+IPAddress localIP(staticIP);
+IPAddress gateway(staticGateway);
+IPAddress subnet(staticSubnet);
+IPAddress primaryDNS(dns);
+IPAddress secondaryDNS(dnsGoogle);
+
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 float tempSensor[5];
@@ -45,8 +51,13 @@ void init_wifi()
 
     Serial.println("Connecting to WiFi");
 
+    if (!WiFi.config(localIP, gateway, subnet, primaryDNS, secondaryDNS))
+    {
+        Serial.println("Failed to configure Static IP");
+    }
+
     WiFi.begin(ssid, password);
-    WiFi.setHostname(hostName.c_str());
+    // WiFi.setHostname(hostName.c_str());
 
     while ((WiFi.status() != WL_CONNECTED) && (retries < MAX_WIFI_INIT_RETRY))
     {
@@ -62,7 +73,6 @@ void init_wifi()
         Serial.print(ssid);
         Serial.print("--- IP: ");
         Serial.println(WiFi.localIP());
-        // BlinkNTimes(LED_0, 3, 500);
     }
     else
     {
