@@ -13,6 +13,9 @@
 #define ONE_WIRE_BUS 2
 #define LED_0 0
 
+int deviceCount;
+bool forceMultipleDevices = true;
+
 unsigned long previousMillisWiFi = 0;
 
 IPAddress localIP(staticIP);
@@ -31,7 +34,7 @@ String deviceAddress[5] = {"", "", "", "", ""};
 byte gpio = 2;
 String strTemperature[5] = {"-127", "-127", "-127", "-127", "-127"};
 
-int deviceCount;
+WiFiServer server(80);
 
 void BlinkNTimes(int pin, int blinks, unsigned long millies)
 {
@@ -57,7 +60,7 @@ void init_wifi()
     }
 
     WiFi.begin(ssid, password);
-    // WiFi.setHostname(hostName.c_str());
+    WiFi.setHostname(hostName.c_str());
 
     while ((WiFi.status() != WL_CONNECTED) && (retries < MAX_WIFI_INIT_RETRY))
     {
@@ -133,11 +136,12 @@ void get_temps()
                                           "huis",
                                           "huis",
                                           WiFi.hostname(),
-                                          "0",
+                                          (String)i,
                                           "temperature",
                                           (String)tempSensor[i]);
                 int returnCode = influxDBData.PutData();
                 Serial.println("ReturnCode=" + String(returnCode));
+                Serial.println();
             }
         }
     }
@@ -174,6 +178,8 @@ void getDevices()
 
 void setup(void)
 {
+    forceMultipleDevices = false;
+
     Serial.begin(115200);
     // pinMode(LED_BUILTIN, OUTPUT);
     pinMode(LED_0, OUTPUT);
@@ -182,9 +188,21 @@ void setup(void)
     deviceCount = 5;
 #else
     getDevices();
+    if (forceMultipleDevices)
+    {
+        int cnt = 0;
+        while ((deviceCount = 1) && (cnt < 5))
+        {
+            getDevices();
+            cnt++;
+        }
+    }
+
 #endif
 
     init_wifi();
+
+    server.begin();
 }
 
 void loop(void)
